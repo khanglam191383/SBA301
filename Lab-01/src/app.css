@@ -1,0 +1,17 @@
+body {
+  margin: 0;
+  background-color: #f8f9fa;
+}
+
+.orchid-card {
+  transition: transform 0.2s ease;
+}
+
+.orchid-card:hover {
+  transform: translateY(-4px);
+}
+
+.orchid-card img {
+  height: 220px;
+  object-fit: cover;
+}
