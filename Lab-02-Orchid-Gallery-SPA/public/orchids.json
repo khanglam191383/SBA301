@@ -1,0 +1,90 @@
+[
+  {
+    "id": 1,
+    "name": "Ceasar 4N",
+    "category": "Dendrobium",
+    "isSpecial": true,
+    "origin": "Thailand",
+    "color": "Purple",
+    "rating": 4.8,
+    "image": "/images/orchid-placeholder.svg",
+    "description": "A beautiful Dendrobium orchid with attractive purple flowers."
+  },
+  {
+    "id": 2,
+    "name": "Mini Yaya",
+    "category": "Dendrobium",
+    "isSpecial": true,
+    "origin": "Taiwan",
+    "color": "Pink",
+    "rating": 4.6,
+    "image": "/images/orchid-placeholder.svg",
+    "description": "A compact Dendrobium orchid with lovely pink flowers."
+  },
+  {
+    "id": 3,
+    "name": "Crystallinum",
+    "category": "Dendrobium",
+    "isSpecial": true,
+    "origin": "Southeast Asia",
+    "color": "White",
+    "rating": 4.7,
+    "image": "/images/orchid-placeholder.svg",
+    "description": "A beautiful orchid from Southeast Asia with elegant white flowers."
+  },
+  {
+    "id": 4,
+    "name": "Damari",
+    "category": "Dendrobium",
+    "isSpecial": false,
+    "origin": "Hybrid",
+    "color": "Yellow",
+    "rating": 4.2,
+    "image": "/images/orchid-placeholder.svg",
+    "description": "A yellow Dendrobium hybrid with a bright and attractive appearance."
+  },
+  {
+    "id": 5,
+    "name": "Taichung Beauty",
+    "category": "Cattleya",
+    "isSpecial": true,
+    "origin": "Taiwan",
+    "color": "Violet",
+    "rating": 4.9,
+    "image": "/images/orchid-placeholder.svg",
+    "description": "A beautiful Cattleya orchid known for its elegant violet flowers."
+  },
+  {
+    "id": 6,
+    "name": "Snow White",
+    "category": "Phalaenopsis",
+    "isSpecial": false,
+    "origin": "Hybrid",
+    "color": "White",
+    "rating": 4.3,
+    "image": "/images/orchid-placeholder.svg",
+    "description": "A white Phalaenopsis hybrid with a clean and elegant appearance."
+  },
+  {
+    "id": 7,
+    "name": "Golden Shower",
+    "category": "Oncidium",
+    "isSpecial": false,
+    "origin": "Hybrid",
+    "color": "Yellow",
+    "rating": 4.4,
+    "image": "/images/orchid-placeholder.svg",
+    "description": "A cheerful yellow Oncidium orchid with beautiful flowers."
+  },
+  {
+    "id": 8,
+    "name": "Blue Vanda",
+    "category": "Vanda",
+    "isSpecial": true,
+    "origin": "Asia",
+    "color": "Blue",
+    "rating": 4.8,
+    "image": "/images/orchid-placeholder.svg",
+    "description": "A striking Vanda orchid with attractive blue flowers."
+  }
+]
