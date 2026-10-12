@@ -1,0 +1,19 @@
+﻿=== TABLES IN OrchidDB ===
+Table: orchid_categories
+Table: orchids
+
+=== COLUMNS IN orchid_categories ===
+  category_id : bigint() - Nullable: NO
+  category_name : varchar(100) - Nullable: NO
+
+=== COLUMNS IN orchids ===
+  orchidid : bigint() - Nullable: NO
+  is_attractive : bit() - Nullable: YES
+  is_natural : bit() - Nullable: YES
+  orchid_description : varchar(1000) - Nullable: YES
+  orchid_name : varchar(150) - Nullable: NO
+  orchidurl : varchar(255) - Nullable: YES
+  category_id : bigint() - Nullable: NO
+
+=== FOREIGN KEYS ===
+  FK: FK1nau98c2g1u4qk2nx7fmj0dt5 on orchids(category_id) -> orchid_categories(category_id)

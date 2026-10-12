@@ -1,0 +1,3 @@
+﻿=== SEEDED CATEGORIES ===
+  ID: 1 | Name: Cattleya
+  ID: 2 | Name: Dendrobium
