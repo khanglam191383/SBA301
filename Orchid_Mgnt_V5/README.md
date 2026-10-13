@@ -1,0 +1,752 @@
+# Orchid Management
+
+Ứng dụng full-stack quản lý hoa lan, theo bài thực hành SBA301 Lab 05. Frontend và backend là hai project độc lập, giao tiếp qua REST API:
+
+- `backend/`: Java 21, Spring Boot 3, Spring Web, Spring Data JPA, SQL Server.
+- `frontend/`: React, TypeScript, Vite, Axios, React Router.
+- SQL Server database: `OrchidManagementDB`, bảng `dbo.Orchid`.
+- Backend mặc định chạy tại `http://localhost:8080`; frontend Vite mặc định tại `http://localhost:5173`.
+
+## I. Cấu hình và chạy ứng dụng
+
+### 1. Chuẩn bị SQL Server
+
+Khởi động dịch vụ SQL Server. Đảm bảo TCP/IP được bật, SQL Server đang lắng nghe port `1433`, chế độ SQL Server Authentication được bật và tài khoản `sa` có thể đăng nhập.
+
+Trong SSMS, kết nối đến đúng SQL Server instance, mở cửa sổ truy vấn và kiểm tra/tạo database:
+
+```sql
+IF DB_ID(N'OrchidManagementDB') IS NULL
+    CREATE DATABASE OrchidManagementDB;
+GO
+
+USE OrchidManagementDB;
+GO
+
+SELECT DB_NAME() AS CurrentDatabase;
+SELECT OrchidID, OrchidName, IsNatural, OrchidDescription,
+       OrchidCategory, IsAttractive, OrchidURL
+FROM dbo.Orchid;
+```
+
+`DB_ID(...)` kiểm tra database có tồn tại trước khi tạo để tránh tạo trùng. `GO` kết thúc batch trong SSMS; đây là dấu phân cách của SSMS, không phải lệnh SQL Server gửi trực tiếp như một câu SQL thông thường. `USE` chuyển context truy vấn sang đúng database. Hai câu `SELECT` xác nhận database đang dùng và đọc các cột mà ứng dụng cần. Nếu bảng chưa tồn tại nhưng database đã có, backend hiện bật `spring.jpa.hibernate.ddl-auto=update` và có thể tạo bảng khi khởi động; với database dùng chung/production, nên quản lý schema bằng migration thay vì tự động thay đổi schema.
+
+Backend lấy host, port, database, username và password từ `backend/src/main/resources/application.properties`. URL hiện dùng `localhost:1433`, database `OrchidManagementDB`, `encrypt=true` và `trustServerCertificate=true`. `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` nếu được cung cấp bên ngoài sẽ ghi đè giá trị mặc định trong file. Không đưa mật khẩu SQL Server thật lên Git hoặc chia sẻ repository công khai.
+
+### 2. Chạy backend bằng IntelliJ IDEA
+
+1. Mở `backend/pom.xml`; nếu IntelliJ hỏi, chọn **Load Maven Project** hoặc **Add as Maven Project**. Chờ Maven tải dependencies và indexing hoàn tất.
+2. Trong **File → Project Structure → Project**, chọn **Project SDK: Java 21**.
+3. Mở `backend/src/main/java/fu/se/backend/BackendApplication.java`.
+4. Chọn cấu hình Spring Boot `BackendApplication` trên thanh công cụ, hoặc nhấn biểu tượng Run cạnh hàm `main()`. Nếu chưa có cấu hình, dùng **Run → Edit Configurations… → + → Spring Boot**, đặt Main class là `fu.se.backend.BackendApplication`, chọn module backend và JRE Java 21.
+5. Để **Active profiles** trống khi chạy SQL Server. Profile `test` chỉ dùng H2 cho automated tests.
+6. Nhấn **Run**. Trong Run console cần thấy backend khởi động ở port `8080`; nếu lỗi, xem root cause cuối stack trace.
+
+Không chỉnh mục **Run/Debug Configuration Templates** để chạy riêng ứng dụng: template chỉ là mẫu. Hãy tạo/chọn cấu hình `BackendApplication`.
+
+### 3. Chạy frontend bằng IntelliJ IDEA
+
+1. Mở `frontend/package.json` và xác nhận script `dev` có lệnh `vite`.
+2. Tạo cấu hình qua **Run → Edit Configurations… → + → npm**. Chọn package file `frontend/package.json`, command/script `run` / `dev`, và working directory là thư mục `frontend`.
+3. Nhấn **Run**. Vite sẽ in địa chỉ local, thông thường là `http://localhost:5173`.
+
+Frontend lấy URL backend từ `frontend/.env`:
+
+```dotenv
+VITE_API_URL=http://localhost:8080/orchids
+```
+
+Nếu sửa file `.env`, cần khởi động lại Vite để nạp biến mới. Không đưa mật khẩu database vào biến `VITE_*`: biến Vite được đưa tới mã chạy trên trình duyệt.
+
+### 4. Khởi động và kiểm tra theo thứ tự
+
+1. SQL Server đang chạy và database `OrchidManagementDB` có thể truy cập.
+2. Khởi chạy backend, sau đó mở `http://localhost:8080/orchids`. Endpoint list phải trả HTTP `200` cùng JSON array (có thể rỗng nếu bảng thực sự chưa có hàng).
+3. Khởi chạy frontend, mở `http://localhost:5173`.
+4. Mở DevTools bằng `F12` → **Network** → lọc **Fetch/XHR** → tải lại trang. Request list phải gửi tới `http://localhost:8080/orchids` và có status `200`.
+5. Đối chiếu số hàng UI, số object trong response JSON và số record trong `dbo.Orchid`.
+
+REST API hiện có:
+
+| Method | Endpoint | Thành công |
+| --- | --- | --- |
+| `GET` | `/orchids` | `200` + mảng hoa lan |
+| `GET` | `/orchids/{id}` | `200` + một hoa lan; `404` nếu không có ID |
+| `POST` | `/orchids` | `201` + record vừa tạo |
+| `PUT` | `/orchids/{id}` | `200` + record cập nhật; `404` nếu không có ID |
+| `DELETE` | `/orchids/{id}` | `204`; `404` nếu không có ID |
+
+Payload create/update dùng các tên JSON `orchidName`, `natural`, `orchidDescription`, `orchidCategory`, `attractive`, `orchidURL`. ID tự sinh trong database, không cần gửi khi tạo.
+
+## II. Hướng dẫn khắc phục lỗi code và cấu hình
+
+### 1. Chẩn đoán từ đúng boundary
+
+Khi UI không đúng, đi theo luồng từng lớp, đừng sửa database hoặc repository khi chưa có bằng chứng:
+
+1. **Browser → Network:** xem request có được gửi không; kiểm tra Request URL, method, status và response body.
+2. **URL/CORS:** xác nhận frontend gọi đúng host, port, path và origin Vite được backend cho phép.
+3. **Controller → Service → Repository:** nếu request đến backend mà lỗi, đọc exception ở Run console để tìm lớp phát sinh.
+4. **SQL Server:** so sánh database, bảng, schema, tên cột và dữ liệu bằng câu SQL kiểm tra.
+5. **React:** nếu API trả dữ liệu đúng nhưng giao diện sai, kiểm tra tên thuộc tính JSON và render/state.
+
+Network cho biết lỗi thuộc phía trình duyệt hay HTTP; Run console cho biết root cause Java/JPA/SQL. Chỉ dựa vào câu thông báo rút gọn trên UI thường không đủ để kết luận.
+
+### 2. Sai tên database hoặc sai SQL Server instance
+
+Triệu chứng thường gặp là backend báo không tìm thấy database, không kết nối được, hoặc API trả danh sách rỗng trong khi SSMS thấy có dữ liệu.
+
+1. Trong SSMS chạy `SELECT DB_NAME()` rồi `SELECT * FROM dbo.Orchid;` trên database đang chứa dữ liệu.
+2. So sánh host, port và `databaseName` trong JDBC URL ở `backend/src/main/resources/application.properties`. Cấu hình hiện tại trỏ tới `localhost:1433` và `OrchidManagementDB`.
+3. Nếu SSMS kết nối bằng instance/port khác, sửa URL cho đúng instance đang chạy. SQL Server named instance có thể dùng port động; ưu tiên xác định port TCP thật trong SQL Server Configuration Manager rồi dùng port đó.
+4. Dừng backend trong IntelliJ và Run lại sau khi sửa cấu hình. Spring không tự đổi datasource cho một tiến trình đang chạy.
+
+Ví dụ URL có dạng `jdbc:sqlserver://localhost:1433;databaseName=OrchidManagementDB;encrypt=true;trustServerCertificate=true`: phần host/port xác định server cần kết nối; `databaseName` xác định catalog; `encrypt` bật mã hóa kết nối; `trustServerCertificate` chấp nhận certificate của server trong môi trường local. Không dùng tùy chọn trust certificate như một quyết định bảo mật production nếu chưa đánh giá certificate.
+
+### 3. `Login failed for user 'sa'` hoặc lỗi mở kết nối
+
+- `Login failed`: kiểm tra SQL Authentication đã bật, tài khoản `sa` đã enable, password đúng, và user có quyền vào `OrchidManagementDB`.
+- `Connection refused` / timeout: kiểm tra dịch vụ SQL Server, TCP/IP, port, firewall và đúng SQL Server instance.
+- `Cannot open database`: kiểm tra database có tồn tại, tên viết đúng và user `sa` có quyền truy cập.
+- Không thêm password vào `frontend/.env`; frontend không kết nối trực tiếp SQL Server. Chỉ backend được phép dùng credentials database.
+
+### 4. HTTP `404` và URL API sai
+
+`404` nghĩa là server nhận request nhưng không tìm thấy route hoặc resource tương ứng. Backend khai báo collection tại `/orchids`, detail tại `/orchids/{id}`. Frontend đặt base URL ở `frontend/.env`, còn `frontend/src/services/orchidApi.ts` nối các path tương đối. Kiểm tra URL thật ở **Network → Request URL**; không thêm tiền tố hoặc dấu `/` sai vị trí.
+
+- `/orchids` trả `200` với JSON array rỗng: route hoạt động nhưng database/schema đang đọc không có hàng.
+- `/orchids` trả `404`: sai port/path, backend chưa chạy đúng ứng dụng hoặc request đang gửi nhầm tới Vite.
+- `/orchids/{id}` trả `404`: API hoạt động nhưng ID đó không tồn tại.
+- `404` trên trang detail khi reload một URL `/orchids/{id}` trực tiếp: production web server cần cấu hình SPA history fallback về `index.html`. Vite dev server đã hỗ trợ fallback này.
+
+Collection endpoint của backend là chính xác `/orchids` không có dấu `/` cuối. Trong `frontend/src/services/orchidApi.ts`, dùng `api.get<Orchid[]>('')` (và `api.post<Orchid>('', payload)`) với base URL `http://localhost:8080/orchids`; không dùng `'/'`, vì request khi đó có thể thành `/orchids/` và không khớp mapping backend hiện tại.
+
+### 5. HTTP `500`, sai tên cột hoặc sai schema
+
+`500` là exception trong backend. Đọc phần cuối stack trace trong Run console, tìm dòng `Caused by` và thông báo SQL Server; đừng suy đoán từ riêng status code.
+
+Bảng đang được dùng là `OrchidManagementDB.dbo.Orchid` với các cột `OrchidID`, `OrchidName`, `IsNatural`, `OrchidDescription`, `OrchidCategory`, `IsAttractive`, `OrchidURL`. `backend/src/main/java/fu/se/backend/orchids/Orchid.java` ánh xạ entity bằng `@Table` và các `@Column(name = "...")`. Cấu hình `spring.jpa.hibernate.naming.physical-strategy=org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl` trong `application.properties` yêu cầu Hibernate giữ nguyên tên đã khai báo, thay vì biến tên thành snake_case như `is_attractive`.
+
+Nếu log báo `Invalid column name`:
+
+1. So sánh chính xác column trong log với kết quả `SELECT TOP (10) * FROM dbo.Orchid`.
+2. Kiểm tra backend đang vào đúng `OrchidManagementDB` và đúng schema `dbo`.
+3. Đồng bộ `@Column(name = "...")` với schema thật, kể cả tiền tố `Is` và cách viết hoa/thường.
+4. Dừng và khởi chạy lại backend sau khi đổi entity/config.
+
+Không xóa bảng hoặc chạy `ddl-auto=create` để thử sửa lỗi trên database có dữ liệu. `ddl-auto=update` hiện được dùng cho lab; kiểm tra kỹ mọi thay đổi schema trước khi chạy trên dữ liệu quan trọng.
+
+### 6. HTTP `400`, `415` và CRUD không lưu được
+
+- `400 Bad Request`: JSON sai cú pháp, thiếu `orchidName`, tên property không khớp hoặc tên trống. `OrchidName` được validate không rỗng.
+- `415 Unsupported Media Type`: gửi request body nhưng thiếu `Content-Type: application/json`.
+- `POST` phải gửi JSON không có `orchidId`; backend đặt ID null để SQL Server identity tự cấp.
+- `PUT /orchids/{id}` phải gửi toàn bộ dữ liệu cần cập nhật và đúng ID. API hiện trả `404` khi ID không tồn tại.
+- Sau `POST` kiểm tra response `201`, sau đó GET list và truy vấn DB. Sau `PUT` kiểm tra `200` và giá trị mới. Sau `DELETE` kiểm tra `204`, GET detail phải trả `404`, record không còn trong DB.
+
+Ví dụ body hợp lệ:
+
+```json
+{
+  "orchidName": "Taichung Beauty",
+  "natural": true,
+  "orchidDescription": "Popular Cattleya orchid",
+  "orchidCategory": "Cattleya",
+  "attractive": true,
+  "orchidURL": "https://example.com/orchid1.jpg"
+}
+```
+
+### 7. CORS error trên browser
+
+CORS chỉ được browser thực thi; Postman thành công không chứng minh CORS đã đúng. `backend/src/main/java/fu/se/backend/config/CorsConfig.java` hiện cho phép origin `http://localhost:5173` cùng methods GET/POST/PUT/DELETE/OPTIONS. Nếu Vite chạy ở port khác, thêm đúng origin vào allowlist rồi khởi động lại backend. Không mở mọi origin cho ứng dụng production; chỉ cho phép domain cần thiết, đặc biệt nếu sau này dùng cookie/credentials.
+
+Ví dụ `backend/src/main/java/fu/se/backend/config/CorsConfig.java` cho phép đúng origin Vite mặc định:
+
+```java
+package fu.se.backend.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+@Configuration
+public class CorsConfig implements WebMvcConfigurer {
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/**")
+                .allowedOrigins("http://localhost:5173")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*");
+    }
+}
+```
+
+`addMapping("/**")` áp dụng CORS cho mọi API path; `allowedOrigins` là allowlist origin chính xác (scheme, host, port); methods liệt kê các HTTP method frontend cần; `allowedHeaders("*")` cho phép request headers như `Content-Type`. Khi đổi Vite port, thêm origin mới vào allowlist rồi restart backend. Không dùng `allowedOriginPatterns("*")` cho production.
+
+### 8. API đúng nhưng giao diện hoặc ảnh không hiển thị
+
+- Xem **Network → Response**: dữ liệu backend dùng JSON camelCase như `orchidId`, `orchidName`, `orchidURL`, còn tên cột SQL Server là PascalCase. Jackson/JPA mapping làm cầu nối giữa hai dạng này.
+- Nếu response có dữ liệu nhưng UI rỗng, so tên property trong `frontend/src/types.ts` và phần render trong `frontend/src/App.tsx`.
+- Ảnh danh sách/detail dùng URL `orchidURL`. Thử mở URL đó trực tiếp trong browser; server ảnh phải trả nội dung ảnh hợp lệ, không yêu cầu đăng nhập và cho phép browser tải. URL mẫu `example.com/orchid1.jpg` trong tài liệu chỉ là dữ liệu minh họa, không bảo đảm có file ảnh thật.
+- Component có biểu tượng dự phòng khi URL ảnh trống hoặc tải lỗi; kiểm tra tab Network lọc **Img** để xem response ảnh.
+
+### 9. Chạy các lệnh kiểm tra trong terminal IntelliJ (tùy chọn)
+
+Các lệnh dưới đây chạy trong terminal mở tại đúng thư mục project; có thể chạy các kiểm tra tương đương bằng Maven/npm tool windows trong IntelliJ.
+
+Backend, từ `backend`:
+
+```powershell
+.\mvnw.cmd test
+```
+
+`mvnw.cmd` là Maven Wrapper của project, dùng Maven version được cấu hình trong repository mà không cần cài Maven toàn cục. `test` biên dịch và chạy automated tests; test đang dùng profile `test` với H2 in-memory để kiểm tra repository/CRUD mà không truy cập SQL Server thật. `-q` (nếu thêm, ví dụ `.\mvnw.cmd test -q`) rút gọn log; bỏ `-q` khi cần đọc chi tiết lỗi.
+
+Frontend, từ `frontend`:
+
+```powershell
+npm install
+npm run build
+npm run lint
+```
+
+`npm install` đọc `package.json` và `package-lock.json` để cài dependency; thường chỉ cần khi setup/clone project hoặc khi dependencies đổi. `npm run build` gọi script `build` đã khai báo, chạy TypeScript project build (`tsc -b`) trước rồi đóng gói production bằng Vite. `npm run lint` gọi Oxlint để tìm vấn đề code; đây không khởi động ứng dụng.
+
+## III. Chức năng mở rộng: xem chi tiết hoa lan
+
+### 1. Luồng chức năng
+
+1. Trang chủ gọi `GET /orchids` để hiển thị collection.
+2. Nhấn thumbnail hoặc tên một hoa lan. React Router điều hướng trong SPA tới `/orchids/{id}` mà không tải lại toàn bộ trang.
+3. Route `path="/orchids/:id"` trong `frontend/src/main.tsx` render `OrchidDetail`.
+4. Component đọc `id` từ URL bằng `useParams()` và gọi `getOrchid(id)` trong `frontend/src/services/orchidApi.ts`.
+5. Axios gửi `GET http://localhost:8080/orchids/{id}`. `OrchidController.findById()` gọi service/repository để truy vấn record bằng primary key.
+6. Nếu record tồn tại, backend trả `200` với một object JSON. Trang hiển thị ảnh, tên, ID, category, natural/attractive và description. Nếu không có ID tương ứng, backend trả `404`; frontend hiển thị lỗi thay vì trang trống.
+7. Liên kết **Quay lại bộ sưu tập** dùng React Router quay về `/`.
+
+Backend đã có API detail cùng CRUD: `GET /orchids/{id}` trong `OrchidController` và `findById()` trong service/repository. Vì vậy phần mở rộng trang chi tiết chủ yếu bổ sung routing và UI; không cần endpoint hoặc bảng SQL mới.
+
+### 2. Các file liên quan
+
+- `backend/src/main/java/fu/se/backend/orchids/OrchidController.java`: route detail và HTTP status `200`/`404`.
+- `backend/src/main/java/fu/se/backend/orchids/OrchidService.java`: tra cứu `Optional<Orchid>` theo ID.
+- `backend/src/main/java/fu/se/backend/orchids/OrchidRepository.java`: `JpaRepository` cung cấp `findById`.
+- `frontend/src/main.tsx`: khai báo `BrowserRouter`, route trang chủ và route `/orchids/:id`.
+- `frontend/src/App.tsx`: tạo link từ ảnh/tên trong từng dòng danh sách.
+- `frontend/src/services/orchidApi.ts`: Axios helper `getOrchid(id)`.
+- `frontend/src/OrchidDetail.tsx`: tải và trình bày detail, loading state, lỗi ID/request và link quay lại.
+- `frontend/src/types.ts`: kiểu dữ liệu JSON Orchid dùng chung giữa list và detail.
+
+### 3. Mã nguồn tham khảo để xây dựng chức năng
+
+Các đoạn dưới đây là mã tham khảo theo cấu trúc hiện tại. Nếu tạo/cập nhật project từ đầu, đặt mỗi đoạn Java trong file có cùng tên và package; frontend đặt vào đúng đường dẫn trong `frontend/src`.
+
+#### 3.1 Cấu hình SQL Server và giữ nguyên tên cột
+
+Trong `backend/src/main/resources/application.properties`, thay `YOUR_SQL_SERVER_PASSWORD` bằng mật khẩu SQL Server local của máy. Không commit mật khẩu thật vào repository dùng chung.
+
+```properties
+spring.application.name=orchid-api
+server.port=8080
+
+spring.datasource.url=jdbc:sqlserver://localhost:1433;databaseName=OrchidManagementDB;encrypt=true;trustServerCertificate=true
+spring.datasource.username=sa
+spring.datasource.password=YOUR_SQL_SERVER_PASSWORD
+
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.open-in-view=false
+spring.jpa.hibernate.naming.physical-strategy=org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+```
+
+`server.port` là port của API. JDBC URL phải trỏ đúng SQL Server, port và database. `ddl-auto=update` yêu cầu Hibernate tạo/cập nhật schema khi chạy; không đổi thành `create` trên database có dữ liệu. Physical naming strategy ở cuối giữ nguyên tên đã chỉ định trong `@Column`, tránh đổi thành tên như `is_attractive`.
+
+#### 3.2 Entity ánh xạ bảng SQL Server
+
+File `backend/src/main/java/fu/se/backend/orchids/Orchid.java`:
+
+```java
+package fu.se.backend.orchids;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+@Entity
+@Table(name = "Orchid")
+public class Orchid {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "OrchidID")
+    private Integer orchidId;
+
+    @NotBlank
+    @Size(max = 150)
+    @Column(name = "OrchidName", nullable = false, length = 150)
+    private String orchidName;
+
+    @Column(name = "IsNatural", nullable = false)
+    private boolean natural;
+
+    @Size(max = 1000)
+    @Column(name = "OrchidDescription", length = 1000)
+    private String orchidDescription;
+
+    @Size(max = 100)
+    @Column(name = "OrchidCategory", length = 100)
+    private String orchidCategory;
+
+    @Column(name = "IsAttractive", nullable = false)
+    private boolean attractive;
+
+    @Size(max = 1000)
+    @Column(name = "OrchidURL", length = 1000)
+    private String orchidURL;
+
+    public Integer getOrchidId() { return orchidId; }
+    public void setOrchidId(Integer orchidId) { this.orchidId = orchidId; }
+    public String getOrchidName() { return orchidName; }
+    public void setOrchidName(String orchidName) { this.orchidName = orchidName; }
+    public boolean isNatural() { return natural; }
+    public void setNatural(boolean natural) { this.natural = natural; }
+    public String getOrchidDescription() { return orchidDescription; }
+    public void setOrchidDescription(String orchidDescription) { this.orchidDescription = orchidDescription; }
+    public String getOrchidCategory() { return orchidCategory; }
+    public void setOrchidCategory(String orchidCategory) { this.orchidCategory = orchidCategory; }
+    public boolean isAttractive() { return attractive; }
+    public void setAttractive(boolean attractive) { this.attractive = attractive; }
+    public String getOrchidURL() { return orchidURL; }
+    public void setOrchidURL(String orchidURL) { this.orchidURL = orchidURL; }
+}
+```
+
+`@Entity` đánh dấu JPA entity; `@Table` và từng `@Column(name=...)` nối thuộc tính Java với đúng bảng/cột hiện có. `@Id` là khóa chính, `IDENTITY` để SQL Server tự sinh ID. Validation giới hạn tên không rỗng và chiều dài trường theo schema. Boolean dùng `natural`/`attractive` trong Java và JSON, nhưng ánh xạ xuống `IsNatural`/`IsAttractive` trong SQL Server.
+
+#### 3.3 Repository, service và REST controller
+
+Repository `backend/src/main/java/fu/se/backend/orchids/OrchidRepository.java`:
+
+```java
+package fu.se.backend.orchids;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface OrchidRepository extends JpaRepository<Orchid, Integer> {
+}
+```
+
+Kế thừa `JpaRepository<Orchid, Integer>` cung cấp `findAll`, `findById`, `save`, `existsById` và `deleteById`; tham số thứ hai là kiểu của primary key.
+
+Service `backend/src/main/java/fu/se/backend/orchids/OrchidService.java`:
+
+```java
+package fu.se.backend.orchids;
+
+import org.springframework.stereotype.Service;
+import java.util.List;
+import java.util.Optional;
+
+@Service
+public class OrchidService {
+    private final OrchidRepository repository;
+
+    public OrchidService(OrchidRepository repository) {
+        this.repository = repository;
+    }
+
+    public List<Orchid> findAll() {
+        return repository.findAll();
+    }
+
+    public Optional<Orchid> findById(int id) {
+        return repository.findById(id);
+    }
+
+    public Orchid create(Orchid orchid) {
+        orchid.setOrchidId(null);
+        return repository.save(orchid);
+    }
+
+    public Optional<Orchid> update(int id, Orchid input) {
+        return repository.findById(id).map(current -> {
+            current.setOrchidName(input.getOrchidName());
+            current.setNatural(input.isNatural());
+            current.setOrchidDescription(input.getOrchidDescription());
+            current.setOrchidCategory(input.getOrchidCategory());
+            current.setAttractive(input.isAttractive());
+            current.setOrchidURL(input.getOrchidURL());
+            return repository.save(current);
+        });
+    }
+
+    public boolean delete(int id) {
+        if (!repository.existsById(id)) {
+            return false;
+        }
+        repository.deleteById(id);
+        return true;
+    }
+}
+```
+
+Service giữ business logic và không để frontend truy cập repository/database trực tiếp. Khi tạo, ID được đặt `null` để database identity tự cấp; khi cập nhật, service tìm record hiện tại trước rồi sao chép từng field, nên không vô tình đổi ID.
+
+Controller `backend/src/main/java/fu/se/backend/orchids/OrchidController.java`:
+
+```java
+package fu.se.backend.orchids;
+
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import java.net.URI;
+import java.util.List;
+
+@RestController
+@RequestMapping("/orchids")
+public class OrchidController {
+    private final OrchidService service;
+
+    public OrchidController(OrchidService service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    public List<Orchid> findAll() {
+        return service.findAll();
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Orchid> findById(@PathVariable int id) {
+        return service.findById(id)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @PostMapping
+    public ResponseEntity<Orchid> create(@Valid @RequestBody Orchid orchid) {
+        Orchid created = service.create(orchid);
+        return ResponseEntity.created(URI.create("/orchids/" + created.getOrchidId()))
+                .body(created);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Orchid> update(
+            @PathVariable int id,
+            @Valid @RequestBody Orchid orchid
+    ) {
+        return service.update(id, orchid)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable int id) {
+        return service.delete(id)
+                ? ResponseEntity.noContent().build()
+                : ResponseEntity.notFound().build();
+    }
+}
+```
+
+`@RestController` trả dữ liệu dưới dạng JSON; `@RequestMapping` đặt prefix chung. Các mapping khai báo đúng GET list/detail, POST, PUT, DELETE. `@Valid` kiểm tra validation của entity trước khi tạo/cập nhật. Status code là một phần của API contract: `201` tạo thành công, `204` xóa thành công, `404` không tìm thấy ID.
+
+#### 3.4 Frontend API client và kiểu dữ liệu
+
+File `frontend/.env`:
+
+```dotenv
+VITE_API_URL=http://localhost:8080/orchids
+```
+
+File `frontend/src/types.ts`:
+
+```ts
+export interface Orchid {
+  orchidId: number
+  orchidName: string
+  natural: boolean
+  orchidDescription: string | null
+  orchidCategory: string | null
+  attractive: boolean
+  orchidURL: string | null
+}
+export type OrchidDraft = Omit<
+  Orchid,
+  'orchidId' | 'orchidDescription' | 'orchidCategory' | 'orchidURL'
+> & {
+  orchidDescription: string
+  orchidCategory: string
+  orchidURL: string
+}
+```
+
+File `frontend/src/services/orchidApi.ts`:
+
+```ts
+import axios from 'axios'
+import type { Orchid, OrchidDraft } from '../types'
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL,
+  headers: { 'Content-Type': 'application/json' },
+})
+
+export const getOrchids = () => api.get<Orchid[]>('')
+export const getOrchid = (id: string | number) => api.get<Orchid>(`/${id}`)
+export const createOrchid = (orchid: OrchidDraft) => api.post<Orchid>('', orchid)
+export const updateOrchid = (id: number, orchid: OrchidDraft) =>
+  api.put<Orchid>(`/${id}`, orchid)
+export const deleteOrchid = (id: number) => api.delete(`/${id}`)
+```
+
+Axios tạo một client dùng chung base URL. Path collection để chuỗi rỗng nhằm request đúng `/orchids`, không tự nối thành `/orchids/`. Detail/update/delete thêm `/{id}`. Generic TypeScript (`Orchid[]`, `Orchid`) giúp kiểm tra kiểu response khi viết code; nó không thay thế validation phía backend.
+
+#### 3.5 Router và liên kết từ danh sách tới detail
+
+File `frontend/src/main.tsx`:
+
+```tsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import App from './App'
+import OrchidDetail from './OrchidDetail'
+import './index.css'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<App />} />
+        <Route path="/orchids/:id" element={<OrchidDetail />} />
+      </Routes>
+    </BrowserRouter>
+  </StrictMode>,
+)
+```
+
+`BrowserRouter` bật điều hướng SPA bằng URL browser; `:id` là path parameter cho mã hoa. `Routes` hiển thị đúng page theo path mà không reload toàn document.
+
+Trong phần render từng item ở `frontend/src/App.tsx`, dùng `Link` cho ảnh và tên:
+
+```tsx
+import { Link } from 'react-router-dom'
+```
+
+Đặt import ở đầu `App.tsx`; trong phần render từng item, dùng JSX:
+
+```tsx
+<div className="orchid-name">
+  <Link
+    className="orchid-detail-link"
+    to={`/orchids/${orchid.orchidId}`}
+    aria-label={`Xem chi tiết ${orchid.orchidName}`}
+  >
+    <span className="row-flower" aria-hidden="true">✳</span>
+    {orchid.orchidURL && (
+      <img src={orchid.orchidURL} alt={orchid.orchidName} loading="lazy" />
+    )}
+  </Link>
+  <Link className="orchid-title-link" to={`/orchids/${orchid.orchidId}`}>
+    <strong>{orchid.orchidName}</strong>
+  </Link>
+</div>
+```
+
+`Link` giữ điều hướng trong React Router thay vì tải lại trang như thẻ `<a href>` thông thường. `orchidId` tạo URL detail đúng record. `alt` cung cấp văn bản thay thế cho ảnh; `loading="lazy"` trì hoãn ảnh ngoài vùng nhìn ban đầu.
+
+Các class dùng trong JSX được định nghĩa trong `frontend/src/App.css`. Nếu tạo giao diện detail từ đầu, có thể dùng CSS tối thiểu sau:
+
+```css
+.detail-page {
+  min-height: 60vh;
+  padding: 38px 0 60px;
+}
+
+.detail-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  background: #eeefe9;
+}
+
+.detail-image {
+  position: relative;
+  display: grid;
+  min-height: 380px;
+  place-items: center;
+  overflow: hidden;
+  background: #e5e9e0;
+}
+
+.detail-image img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.detail-content {
+  align-self: center;
+  padding: 48px;
+}
+
+@media (max-width: 860px) {
+  .detail-card {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-image {
+    min-height: min(70vw, 440px);
+  }
+}
+```
+
+`.detail-card` chia ảnh và phần thông tin thành hai cột trên màn hình rộng; media query xếp thành một cột trên màn hình nhỏ. `object-fit: cover` giữ ảnh phủ kín khu vực mà không kéo méo tỉ lệ.
+
+#### 3.6 Trang detail gọi API và hiển thị trạng thái
+
+Tạo `frontend/src/OrchidDetail.tsx`:
+
+```tsx
+import { useEffect, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { getOrchid } from './services/orchidApi'
+import type { Orchid } from './types'
+import './App.css'
+
+type DetailState =
+  | { id: string; status: 'loaded'; orchid: Orchid }
+  | { id: string; status: 'error'; error: string }
+
+export default function OrchidDetail() {
+  const { id } = useParams()
+  const [detailState, setDetailState] = useState<DetailState | null>(null)
+
+  useEffect(() => {
+    let active = true
+
+    if (!id || !/^\d+$/.test(id)) {
+      return () => {
+        active = false
+      }
+    }
+
+    getOrchid(id)
+      .then((response) => {
+        if (active) setDetailState({ id, status: 'loaded', orchid: response.data })
+      })
+      .catch((requestError: unknown) => {
+        if (active) {
+          setDetailState({
+            id,
+            status: 'error',
+            error: requestError instanceof Error
+              ? `Không thể tải chi tiết hoa lan. ${requestError.message}`
+              : 'Không thể tải chi tiết hoa lan.',
+          })
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [id])
+
+  const invalidId = !id || !/^\d+$/.test(id)
+  const currentState = detailState?.id === id ? detailState : null
+  const orchid = currentState?.status === 'loaded' ? currentState.orchid : null
+
+  return (
+    <main className="page-shell">
+      <header className="topbar">
+        <Link className="brand" to="/">ORCHID / STUDIO</Link>
+        <span className="topbar-note">BỘ SƯU TẬP HOA LAN</span>
+      </header>
+
+      <section className="detail-page">
+        <Link className="back-link" to="/">← Quay lại bộ sưu tập</Link>
+        {invalidId ? (
+          <div className="message error-message" role="alert">
+            Mã hoa lan không hợp lệ.
+          </div>
+        ) : !currentState ? (
+          <div className="empty-state">Đang tải chi tiết hoa lan…</div>
+        ) : currentState.status === 'error' ? (
+          <div className="message error-message" role="alert">
+            {currentState.error}
+          </div>
+        ) : orchid ? (
+          <article className="detail-card">
+            <div className="detail-image">
+              <span className="detail-image-fallback" aria-hidden="true">✳</span>
+              {orchid.orchidURL && (
+                <img
+                  src={orchid.orchidURL}
+                  alt={orchid.orchidName}
+                  onError={(event) => event.currentTarget.remove()}
+                />
+              )}
+            </div>
+            <div className="detail-content">
+              <p className="eyebrow">CHI TIẾT HOA LAN · #{orchid.orchidId}</p>
+              <h1>{orchid.orchidName}</h1>
+              <p className="detail-category">
+                {orchid.orchidCategory || 'Chưa phân loại'}
+              </p>
+              <div className="detail-badges">
+                <span className={orchid.natural ? 'badge' : 'badge badge-muted'}>
+                  {orchid.natural ? 'Tự nhiên' : 'Nhân giống'}
+                </span>
+                <span className={orchid.attractive ? 'badge badge-accent' : 'badge badge-muted'}>
+                  {orchid.attractive ? 'Nổi bật' : 'Thông thường'}
+                </span>
+              </div>
+              <div className="detail-description">
+                <h2>Mô tả</h2>
+                <p>{orchid.orchidDescription || 'Chưa có mô tả cho hoa lan này.'}</p>
+              </div>
+              {orchid.orchidURL && (
+                <a
+                  className="image-source"
+                  href={orchid.orchidURL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Mở hình ảnh gốc ↗
+                </a>
+              )}
+            </div>
+          </article>
+        ) : null}
+      </section>
+    </main>
+  )
+}
+```
+
+Effect gọi API khi `id` đổi; regex chỉ chấp nhận ID số. Cleanup đặt `active=false` để response cũ không ghi đè state sau khi component unmount hoặc người dùng chuyển ID. Union `DetailState` buộc UI xử lý riêng trạng thái loading, error và loaded. Backend `404` đi vào `catch` của Axios và được hiển thị thành thông báo; không giả định request luôn thành công.
+
+### 4. Kiểm thử thủ công
+
+1. Chạy SQL Server, backend và frontend theo phần I.
+2. Mở trang chủ, chọn ảnh hoặc tên một hoa lan. URL phải đổi thành `http://localhost:5173/orchids/1` (ID cụ thể phụ thuộc record).
+3. Trong DevTools → Network chọn request `GET /orchids/{id}`. Kỳ vọng status `200`, response có đủ trường Orchid.
+4. Đối chiếu tên, phân loại, mô tả, các trạng thái boolean và URL ảnh với row tương ứng trong `dbo.Orchid`.
+5. Thử URL `/orchids/999999` với ID không tồn tại; API kỳ vọng trả `404` và UI hiển thị lỗi tải detail.
+6. Nhấn **Quay lại bộ sưu tập**; trang chủ và danh sách phải xuất hiện lại.
+7. Dán trực tiếp URL detail vào thanh địa chỉ rồi tải lại. Vite dev server cần tiếp tục trả ứng dụng SPA; khi deploy production, web server phải cấu hình fallback route về `index.html` để React Router xử lý đường dẫn.
+
+### 4. Giới hạn hiện tại
+
+Detail là chức năng xem, chưa phải trang chỉnh sửa riêng; thao tác sửa/xóa vẫn thực hiện từ danh sách. URL ảnh được lưu dưới dạng chuỗi trong SQL Server, ứng dụng không upload/lưu file ảnh. Nếu record bị xóa trong khi trang detail đang mở hoặc ID sai, API trả `404`. Frontend hiển thị thông báo lỗi request; không có dữ liệu giả thay thế.
+
+## Kiểm thử tự động
+
+Backend tests xác nhận context JPA, persistence trên H2 và contract CRUD bao gồm danh sách, tạo, detail đủ các trường, cập nhật và xóa. Chạy `.\mvnw.cmd test` từ `backend/`. Frontend type-check/build bằng `npm run build`, kiểm tra tĩnh bằng `npm run lint` từ `frontend/`.

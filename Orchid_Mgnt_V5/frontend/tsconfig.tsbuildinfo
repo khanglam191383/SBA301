@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/orchiddetail.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/components/editorchid.tsx","./src/components/listoforchids.tsx","./src/components/navbar.tsx","./src/services/orchidapi.ts"],"version":"5.6.3"}
